@@ -1,14 +1,14 @@
 # poc-bun-fastify
 
-Mini app de pedidos: recebe pedidos via HTTP (Fastify), persiste no MariaDB (Drizzle ORM) e processa de forma assíncrona pela fila `order_processing` do RabbitMQ, com logs genéricos de consumo.
+Mini app de pedidos: recebe pedidos via HTTP (`Bun.serve` com router próprio), persiste no MariaDB (Drizzle ORM) e processa de forma assíncrona pela fila `order_processing` do RabbitMQ, com logs genéricos de consumo.
 
 ## Stack
 
 - Bun
-- Fastify v5
+- `Bun.serve` com router próprio (`src/http/router.ts`)
 - Drizzle ORM (MySQL/MariaDB)
 - RabbitMQ (`amqplib`)
-- Zod + `fastify-type-provider-zod` (validação de entrada e saída das rotas)
+- Zod (validação de entrada e saída das rotas)
 
 ## Pré-requisitos
 
@@ -128,23 +128,57 @@ No Docker, reconstrua a imagem para levar migrations novas: `docker compose up -
 
 Os schemas Zod ficam em `src/schemas/`, um arquivo por recurso. Por exemplo, `order-schema.ts` exporta `createOrderSchema` (entrada) e `orderResponseSchema` (saída), além dos tipos inferidos.
 
-O mesmo arquivo exporta um tipo da rota (`OrderRoute`, com `Body` e `Reply`). Na rota, ele entra como generic e os schemas são declarados em `schema`. O Fastify faz o resto:
+O mesmo arquivo exporta um tipo da rota (`OrderRoute`, com `Body` e `Response`, e `Params` e `Query` quando a rota os usa). Na rota, ele entra como generic e os schemas são declarados em `schema`. O router (`src/http/router.ts`) faz o resto:
 
 ```ts
 app.post<OrderRoute>(
   "/orders",
   { schema: { body: createOrderSchema, response: { 201: orderResponseSchema } } },
-  async (request, reply) => {
+  async (request, response) => {
     const { customer_email } = request.body; // já validado e tipado
-    return reply.status(201).send({ /* validado contra orderResponseSchema */ });
+    return response.status(201).send({ /* validado contra orderResponseSchema */ });
   },
 );
 ```
 
-- **Entrada:** se o corpo não respeitar o schema, a resposta é 400 com `{ error, details: [{ field, message }] }` e o handler nem é chamado.
-- **Saída:** se a resposta não respeitar o schema do status correspondente, o cliente recebe 500 `{ "error": "Resposta inválida" }` e o erro é logado.
-- O tratamento desses erros fica no `setErrorHandler` de `src/app.ts`.
-- Para uma rota nova, crie `src/schemas/<recurso>-schema.ts` com os schemas e o tipo da rota (`{ Body, Reply }`), e use `app.post<TipoDaRota>(url, { schema: { body, response } }, handler)`.
+Exemplo com parâmetro de rota:
+
+```ts
+const orderParamsSchema = z.object({ id: z.coerce.number().int().positive() });
+type OrderByIdRoute = { Params: z.infer<typeof orderParamsSchema>; Response: OrderResponse };
+
+app.get<OrderByIdRoute>(
+  "/orders/:id",
+  { schema: { params: orderParamsSchema, response: { 200: orderResponseSchema } } },
+  async (request, response) => response.send(await findOrder(request.params.id)), // id é number
+);
+```
+
+Exemplo com query string:
+
+```ts
+const listOrdersQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  search: z.string().min(3).optional(),
+});
+type ListOrdersRoute = { Query: z.infer<typeof listOrdersQuerySchema>; Response: OrderResponse[] };
+
+app.get<ListOrdersRoute>(
+  "/orders",
+  { schema: { query: listOrdersQuerySchema } },
+  async (request) => listOrders(request.query.page, request.query.search), // page é number
+);
+```
+
+- **Entrada:** se o corpo não for JSON válido ou não respeitar o schema, a resposta é 400 com `{ error, details: [{ field, message }] }` e o handler nem é chamado.
+- **Saída:** `response.status(código).send(payload)` valida o payload contra o schema daquele status. Se não respeitar, o cliente recebe 500 `{ "error": "Resposta inválida" }` e o erro é logado.
+- **Nomes dos parâmetros:** o handler recebe `(request, response)` de forma posicional, então os nomes são livres: `(request, response)`, `(req, res)` ou qualquer outro.
+- **Retorno simples:** um handler que retorna um objeto (sem usar `response`) responde 200 com esse JSON, como o `GET /health`.
+- **Rotas não encontradas:** respondem 404 `{ "error": "Not Found" }`.
+- **Parâmetros de rota:** use `:nome` no caminho (ex.: `/orders/:id`) e declare `params` no schema. O handler recebe `request.params` validado e tipado. Os valores chegam como string, então use `z.coerce.number()` para números. Parâmetro inválido retorna 400 `{ error: "Parâmetros inválidos", details }`, sem chamar o handler. Sem schema de `params`, `request.params` traz as strings cruas.
+- **Query string:** declare `query` no schema (ex.: `/orders?page=2&status=paid`). O handler recebe `request.query` validado e tipado. Os valores chegam como string, então use `z.coerce.number()` para números e `.default()` para valores padrão. Chaves repetidas (`?tag=a&tag=b`) chegam como lista de strings. Query inválida retorna 400 `{ error: "Query inválida", details }`, sem chamar o handler. Sem schema de `query`, `request.query` traz as strings cruas.
+- **Escopo do router:** hoje suporta `get`, `post`, `put`, `patch` e `delete`, validação de `params`, `query`, `body` e de `response` por status. Hooks não existem; para novos recursos, estenda o `Router`.
+- Para uma rota nova, crie `src/schemas/<recurso>-schema.ts` com os schemas e o tipo da rota (`{ Params, Query, Body, Response }`, só os que a rota usa), e registre em `src/app.ts` com `app.post<TipoDaRota>(url, { schema: { params, query, body, response } }, handler)`.
 
 ## Filas e jobs
 
@@ -202,7 +236,7 @@ Nos logs da app, o worker mostra o ciclo de vida da mensagem:
 
 ### Payload inválido (400)
 
-A validação é automática: o Fastify valida o corpo com o schema da rota antes de chamar o handler, e valida a resposta antes de enviá-la.
+A validação é automática: o router valida o corpo com o schema da rota antes de chamar o handler, e valida a resposta no `response.send` antes de enviá-la.
 
 ```bash
 curl -i -X POST localhost:3000/orders \
@@ -247,8 +281,9 @@ src/
 ├── schemas/               # schemas Zod por recurso (ex.: order-schema.ts)
 ├── queue/index.ts         # defineJob, conexão, publicação e workers do RabbitMQ
 ├── jobs/                  # um arquivo por job (descobertos automaticamente)
-├── app.ts                 # Fastify e endpoints
+├── http/router.ts         # router sobre o Bun.serve, com validação por schema
+├── app.ts                 # endpoints
 └── index.ts               # ponto de entrada
 ```
 
-As diretrizes de código e documentação (Docblocks) estão em `PROMPT.md`.
+As diretrizes de código e documentação (Docblocks) estão em `AGENTS.md`.

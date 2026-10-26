@@ -34,5 +34,5 @@ export type OrderResponse = z.infer<typeof orderResponseSchema>;
  */
 export type OrderRoute = {
   Body: CreateOrderInput;
-  Reply: OrderResponse;
+  Response: OrderResponse;
 };

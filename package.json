@@ -15,8 +15,6 @@
   "dependencies": {
     "amqplib": "^2.2.0",
     "drizzle-orm": "^0.45.4",
-    "fastify": "^5.12.7",
-    "fastify-type-provider-zod": "^7.0.0",
     "mysql2": "^3.24.6",
     "zod": "^4.6.7"
   },
