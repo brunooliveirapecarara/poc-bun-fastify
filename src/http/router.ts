@@ -48,11 +48,31 @@ export type RouteHandler<R extends RouteGeneric> = (
 ) => unknown | Promise<unknown>;
 
 /**
+ * Middleware executado depois da validação e antes do handler. Se retornar uma `Response`, a cadeia é
+ * interrompida e essa resposta é enviada; qualquer outro retorno segue para o próximo passo.
+ */
+export type PreHandler<R extends RouteGeneric = RouteGeneric> = RouteHandler<R>;
+
+/**
+ * Um middleware ou uma lista deles, executados em ordem.
+ */
+export type PreHandlers<R extends RouteGeneric = RouteGeneric> = PreHandler<R> | PreHandler<R>[];
+
+/**
  * Opções de uma rota.
  */
 export interface RouteOptions {
   schema?: RouteSchema;
 }
+
+/**
+ * Argumentos após o `path`: `preHandler` e `options` são opcionais, e o handler é sempre o último.
+ */
+export type RouteArgs<R extends RouteGeneric> =
+  | [handler: RouteHandler<R>]
+  | [options: RouteOptions, handler: RouteHandler<R>]
+  | [preHandler: PreHandlers<R>, handler: RouteHandler<R>]
+  | [preHandler: PreHandlers<R>, options: RouteOptions, handler: RouteHandler<R>];
 
 /**
  * Erro lançado quando uma resposta não respeita o schema Zod do status correspondente.
@@ -155,70 +175,55 @@ export class Router {
    * Registra uma rota GET.
    *
    * @param path - Caminho da rota.
-   * @param options - Opções da rota, incluindo os schemas.
-   * @param handler - Função que trata a requisição.
+   * @param args - `preHandler` (middleware ou lista deles) e `options` (schemas), ambos opcionais e nessa ordem, seguidos do handler.
    * @returns Nada; a rota fica registrada no router.
    */
-  get<R extends RouteGeneric = RouteGeneric>(path: string, handler: RouteHandler<R>): void;
-  get<R extends RouteGeneric = RouteGeneric>(path: string, options: RouteOptions, handler: RouteHandler<R>): void;
-  get<R extends RouteGeneric = RouteGeneric>(path: string, a: RouteOptions | RouteHandler<R>, b?: RouteHandler<R>): void {
-    this.register("GET", path, a, b);
+  get<R extends RouteGeneric = RouteGeneric>(path: string, ...args: RouteArgs<R>): void {
+    this.register("GET", path, args);
   }
 
   /**
    * Registra uma rota POST.
    *
    * @param path - Caminho da rota.
-   * @param options - Opções da rota, incluindo os schemas de `body` e `response`.
-   * @param handler - Função que trata a requisição.
+   * @param args - `preHandler` (middleware ou lista deles) e `options` (schemas), ambos opcionais e nessa ordem, seguidos do handler.
    * @returns Nada; a rota fica registrada no router.
    */
-  post<R extends RouteGeneric = RouteGeneric>(path: string, handler: RouteHandler<R>): void;
-  post<R extends RouteGeneric = RouteGeneric>(path: string, options: RouteOptions, handler: RouteHandler<R>): void;
-  post<R extends RouteGeneric = RouteGeneric>(path: string, a: RouteOptions | RouteHandler<R>, b?: RouteHandler<R>): void {
-    this.register("POST", path, a, b);
+  post<R extends RouteGeneric = RouteGeneric>(path: string, ...args: RouteArgs<R>): void {
+    this.register("POST", path, args);
   }
 
   /**
    * Registra uma rota PUT.
    *
    * @param path - Caminho da rota.
-   * @param options - Opções da rota, incluindo os schemas de `body` e `response`.
-   * @param handler - Função que trata a requisição.
+   * @param args - `preHandler` (middleware ou lista deles) e `options` (schemas), ambos opcionais e nessa ordem, seguidos do handler.
    * @returns Nada; a rota fica registrada no router.
    */
-  put<R extends RouteGeneric = RouteGeneric>(path: string, handler: RouteHandler<R>): void;
-  put<R extends RouteGeneric = RouteGeneric>(path: string, options: RouteOptions, handler: RouteHandler<R>): void;
-  put<R extends RouteGeneric = RouteGeneric>(path: string, a: RouteOptions | RouteHandler<R>, b?: RouteHandler<R>): void {
-    this.register("PUT", path, a, b);
+  put<R extends RouteGeneric = RouteGeneric>(path: string, ...args: RouteArgs<R>): void {
+    this.register("PUT", path, args);
   }
 
   /**
    * Registra uma rota PATCH.
    *
    * @param path - Caminho da rota.
-   * @param options - Opções da rota, incluindo os schemas de `body` e `response`.
-   * @param handler - Função que trata a requisição.
+   * @param args - `preHandler` (middleware ou lista deles) e `options` (schemas), ambos opcionais e nessa ordem, seguidos do handler.
    * @returns Nada; a rota fica registrada no router.
    */
-  patch<R extends RouteGeneric = RouteGeneric>(path: string, handler: RouteHandler<R>): void;
-  patch<R extends RouteGeneric = RouteGeneric>(path: string, options: RouteOptions, handler: RouteHandler<R>): void;
-  patch<R extends RouteGeneric = RouteGeneric>(path: string, a: RouteOptions | RouteHandler<R>, b?: RouteHandler<R>): void {
-    this.register("PATCH", path, a, b);
+  patch<R extends RouteGeneric = RouteGeneric>(path: string, ...args: RouteArgs<R>): void {
+    this.register("PATCH", path, args);
   }
 
   /**
    * Registra uma rota DELETE.
    *
    * @param path - Caminho da rota.
-   * @param options - Opções da rota, incluindo os schemas de `body` e `response`.
-   * @param handler - Função que trata a requisição.
+   * @param args - `preHandler` (middleware ou lista deles) e `options` (schemas), ambos opcionais e nessa ordem, seguidos do handler.
    * @returns Nada; a rota fica registrada no router.
    */
-  delete<R extends RouteGeneric = RouteGeneric>(path: string, handler: RouteHandler<R>): void;
-  delete<R extends RouteGeneric = RouteGeneric>(path: string, options: RouteOptions, handler: RouteHandler<R>): void;
-  delete<R extends RouteGeneric = RouteGeneric>(path: string, a: RouteOptions | RouteHandler<R>, b?: RouteHandler<R>): void {
-    this.register("DELETE", path, a, b);
+  delete<R extends RouteGeneric = RouteGeneric>(path: string, ...args: RouteArgs<R>): void {
+    this.register("DELETE", path, args);
   }
 
   /**
@@ -255,18 +260,15 @@ export class Router {
    *
    * @param method - Método HTTP.
    * @param path - Caminho da rota.
-   * @param a - Opções da rota ou o próprio handler.
-   * @param b - Handler, quando `a` são as opções.
+   * @param args - `preHandler` e `options` opcionais, seguidos do handler.
    * @returns Nada.
    */
-  private register<R extends RouteGeneric>(
-    method: Method,
-    path: string,
-    a: RouteOptions | RouteHandler<R>,
-    b?: RouteHandler<R>,
-  ): void {
-    const options = typeof a === "function" ? {} : a;
-    const handler = (typeof a === "function" ? a : b) as RouteHandler<R>;
+  private register<R extends RouteGeneric>(method: Method, path: string, args: RouteArgs<R>): void {
+    const handler = args[args.length - 1] as RouteHandler<R>;
+    const before = args.slice(0, -1) as (PreHandlers<R> | RouteOptions)[];
+    const options = (before.find((arg) => typeof arg === "object" && !Array.isArray(arg)) ?? {}) as RouteOptions;
+    const preHandlerArg = before.find((arg) => typeof arg === "function" || Array.isArray(arg)) as PreHandlers<R> | undefined;
+    const preHandlers = preHandlerArg === undefined ? [] : [preHandlerArg].flat();
     const schema = options.schema;
 
     const bunHandler: BunHandler = async (request) => {
@@ -299,7 +301,15 @@ export class Router {
       }
 
       try {
-        const result = await handler({ params, query, body, raw: request } as RouteRequest<R>, createResponse<R>(schema));
+        const routeRequest = { params, query, body, raw: request } as RouteRequest<R>;
+        const routeResponse = createResponse<R>(schema);
+
+        for (const preHandler of preHandlers) {
+          const early = await preHandler(routeRequest, routeResponse);
+          if (early instanceof Response) return early;
+        }
+
+        const result = await handler(routeRequest, routeResponse);
         return result instanceof Response ? result : json(result);
       } catch (error) {
         if (error instanceof ResponseValidationError) {

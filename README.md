@@ -177,8 +177,20 @@ app.get<ListOrdersRoute>(
 - **Rotas não encontradas:** respondem 404 `{ "error": "Not Found" }`.
 - **Parâmetros de rota:** use `:nome` no caminho (ex.: `/orders/:id`) e declare `params` no schema. O handler recebe `request.params` validado e tipado. Os valores chegam como string, então use `z.coerce.number()` para números. Parâmetro inválido retorna 400 `{ error: "Parâmetros inválidos", details }`, sem chamar o handler. Sem schema de `params`, `request.params` traz as strings cruas.
 - **Query string:** declare `query` no schema (ex.: `/orders?page=2&status=paid`). O handler recebe `request.query` validado e tipado. Os valores chegam como string, então use `z.coerce.number()` para números e `.default()` para valores padrão. Chaves repetidas (`?tag=a&tag=b`) chegam como lista de strings. Query inválida retorna 400 `{ error: "Query inválida", details }`, sem chamar o handler. Sem schema de `query`, `request.query` traz as strings cruas.
-- **Escopo do router:** hoje suporta `get`, `post`, `put`, `patch` e `delete`, validação de `params`, `query`, `body` e de `response` por status. Hooks não existem; para novos recursos, estenda o `Router`.
-- Para uma rota nova, crie `src/schemas/<recurso>-schema.ts` com os schemas e o tipo da rota (`{ Params, Query, Body, Response }`, só os que a rota usa), e registre em `src/app.ts` com `app.post<TipoDaRota>(url, { schema: { params, query, body, response } }, handler)`.
+- **Middlewares (`preHandler`):** parâmetro opcional logo depois do path, antes de `options`. Aceita uma função ou uma lista delas, executadas em ordem depois da validação e antes do handler. Têm a mesma assinatura do handler (`(request, response)`). Se um middleware retornar uma `Response` (ex.: `response.status(401).send(...)`), a cadeia para e ela é enviada; qualquer outro retorno segue adiante.
+
+  ```ts
+  const requireAuth: PreHandler = (request, response) => {
+    if (!request.raw.headers.get("authorization")) return response.status(401).send({ error: "Não autorizado" });
+  };
+
+  app.get("/me", requireAuth, handler);
+  app.post<OrderRoute>("/orders", [requireAuth, audit], { schema: { body: createOrderSchema } }, handler);
+  ```
+
+- **Formas aceitas:** `(path, handler)`, `(path, options, handler)`, `(path, preHandler, handler)` e `(path, preHandler, options, handler)`. O handler é sempre o último argumento.
+- **Escopo do router:** hoje suporta `get`, `post`, `put`, `patch` e `delete`, validação de `params`, `query`, `body` e de `response` por status, e `preHandler`. Outros hooks não existem; para novos recursos, estenda o `Router`.
+- Para uma rota nova, crie `src/schemas/<recurso>-schema.ts` com os schemas e o tipo da rota (`{ Params, Query, Body, Response }`, só os que a rota usa), e registre em `src/app.ts` com `app.post<TipoDaRota>(url, preHandler?, { schema: { params, query, body, response } }, handler)`.
 
 ## Filas e jobs
 
@@ -281,7 +293,7 @@ src/
 ├── schemas/               # schemas Zod por recurso (ex.: order-schema.ts)
 ├── queue/index.ts         # defineJob, conexão, publicação e workers do RabbitMQ
 ├── jobs/                  # um arquivo por job (descobertos automaticamente)
-├── http/router.ts         # router sobre o Bun.serve, com validação por schema
+├── http/router.ts         # router sobre o Bun.serve, com validação por schema e preHandler
 ├── app.ts                 # endpoints
 └── index.ts               # ponto de entrada
 ```

@@ -24,8 +24,8 @@ Você deve separar as responsabilidades rigorosamente nos seguintes arquivos:
 - `src/queue/index.ts` -> Conexão, `defineJob`, publicação de mensagens, descoberta de jobs e workers de consumo. Suporta várias filas, cada uma com vários jobs.
 - `src/jobs/` -> Um arquivo por job, usando `defineJob({ queue, name, handle })`. Os arquivos são descobertos automaticamente, e `job.dispatch(payload)` enfileira o job de qualquer lugar. A mensagem carrega o nome do job em `properties.type`.
 - `src/schemas/` -> Schemas Zod, um arquivo por recurso (ex.: `order-schema.ts` com `createOrderSchema`, `orderResponseSchema` e o tipo `OrderRoute` com `Body` e `Response`, e `Params` e `Query` quando houver), usados no `schema` das rotas.
-- `src/http/router.ts` -> Router sobre o `Bun.serve`: registra rotas (`get`, `post`, `put`, `patch`, `delete`) e valida `params` (parâmetros de rota como `/orders/:id`), `query` (query string), `body` e `response` pelos schemas Zod da rota.
-- `src/app.ts` -> Instância do Router e definição dos endpoints. As rotas usam a sintaxe `app.post<TipoDaRota>(url, { schema: { params, body, response } }, handler)` (só os schemas que a rota usa; `query` para a query string), e a validação é feita pelo `schema`, nunca manualmente no handler.
+- `src/http/router.ts` -> Router sobre o `Bun.serve`: registra rotas (`get`, `post`, `put`, `patch`, `delete`) e valida `params` (parâmetros de rota como `/orders/:id`), `query` (query string), `body` e `response` pelos schemas Zod da rota. Aceita `preHandler` (middleware ou lista) opcional após o path, executado depois da validação e antes do handler; retornar uma `Response` interrompe a cadeia.
+- `src/app.ts` -> Instância do Router e definição dos endpoints. As rotas usam a sintaxe `app.post<TipoDaRota>(url, preHandler?, { schema: { params, body, response } }, handler)` (`preHandler` opcional; só os schemas que a rota usa; `query` para a query string), e a validação é feita pelo `schema`, nunca manualmente no handler.
 - `src/index.ts` -> Único ponto de entrada. Deve apenas inicializar de forma ordenada a fila e o servidor HTTP.
 
 ## ✍️ Padrão de Documentação e Estilo de Código (Crítico)
